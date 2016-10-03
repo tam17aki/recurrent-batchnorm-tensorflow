@@ -1,9 +1,3 @@
-# An implementation of LSTM with Recurrent Batch Normalization.
-# This implementation is based on:
-#    https://github.com/OlavHN/bnlstm
-#    https://github.com/nicolas-ivanov/Seq2Seq_Upgrade_TensorFlow
-# I am really grateful to the authors of the above implemations.
-
 # Copyright (C) 2016 by Akira TAMAMORI
 #
 # This program is free software; you can redistribute it and/or modify it under
