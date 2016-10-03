@@ -29,7 +29,6 @@
 
 import numpy as np
 import tensorflow as tf
-import math
 
 from tensorflow.python.ops.rnn_cell import RNNCell
 
