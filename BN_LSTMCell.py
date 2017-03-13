@@ -99,7 +99,7 @@ class BN_LSTMCell(RNNCell):
                  initializer=orthogonal_initializer(),
                  num_proj=None, proj_clip=None,
                  forget_bias=1.0,
-                 state_is_tuple=1.0,
+                 state_is_tuple=True,
                  activation=tf.tanh):
         """Initialize the parameters for an LSTM cell.
         Args:
