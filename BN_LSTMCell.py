@@ -30,19 +30,20 @@
 import numpy as np
 import tensorflow as tf
 
-from tensorflow.python.ops.rnn_cell import RNNCell
-
+from tensorflow.contrib.rnn import RNNCell, LSTMStateTuple
 
 # Thanks to 'initializers_enhanced.py' of Project RNN Enhancement:
 # https://github.com/nicolas-ivanov/Seq2Seq_Upgrade_TensorFlow/blob/master/rnn_enhancement/initializers_enhanced.py
 def orthogonal_initializer(scale=1.0):
-    def _initializer(shape, dtype=tf.float32):
+    def _initializer(shape, dtype=tf.float32, partition_info=None):
+        if partition_info is not None:
+            ValueError("Do not know what to do with partition_info in BN_LSTMCell")
         flat_shape = (shape[0], np.prod(shape[1:]))
         a = np.random.normal(0.0, 1.0, flat_shape)
         u, _, v = np.linalg.svd(a, full_matrices=False)
         q = u if u.shape == flat_shape else v
         q = q.reshape(shape)
-        return tf.constant(scale * q[:shape[0], :shape[1]], dtype=tf.float32)
+        return tf.constant(scale * q[:shape[0], :shape[1]], dtype=dtype)
     return _initializer
 
 
@@ -57,10 +58,10 @@ def batch_norm(inputs, name_scope, is_training, epsilon=1e-3, decay=0.99):
 
         population_mean = tf.get_variable(
             'population_mean', [size],
-            initializer=tf.zeros_initializer, trainable=False)
+            initializer=tf.zeros_initializer(), trainable=False)
         population_var = tf.get_variable(
             'population_var', [size],
-            initializer=tf.ones_initializer, trainable=False)
+            initializer=tf.ones_initializer(), trainable=False)
         batch_mean, batch_var = tf.nn.moments(inputs, [0])
 
         # The following part is based on the implementation of :
@@ -98,6 +99,7 @@ class BN_LSTMCell(RNNCell):
                  initializer=orthogonal_initializer(),
                  num_proj=None, proj_clip=None,
                  forget_bias=1.0,
+                 state_is_tuple=1.0,
                  activation=tf.tanh):
         """Initialize the parameters for an LSTM cell.
         Args:
@@ -114,8 +116,15 @@ class BN_LSTMCell(RNNCell):
           forget_bias: Biases of the forget gate are initialized by default
             to 1 in order to reduce the scale of forgetting at the beginning of
             the training.
+          state_is_tuple: If True, accepted and returned states are 2-tuples of
+            the `c_state` and `m_state`.  If False, they are concatenated
+            along the column axis.  This latter behavior will soon be deprecated.
           activation: Activation function of the inner states.
         """
+        if not state_is_tuple:
+            tf.logging.log_first_n(tf.logging.WARN, "%s: Using a concatenated state is slower and "
+                                   " will soon be deprecated.  Use state_is_tuple=True.", 1, self)
+
         self.num_units = num_units
         self.is_training = is_training
         self.use_peepholes = use_peepholes
@@ -124,13 +133,18 @@ class BN_LSTMCell(RNNCell):
         self.proj_clip = proj_clip
         self.initializer = initializer
         self.forget_bias = forget_bias
+        self._state_is_tuple = state_is_tuple
         self.activation = activation
 
         if num_proj:
-            self._state_size = num_units + num_proj
+            self._state_size = (
+                LSTMStateTuple(num_units, num_proj)
+                if state_is_tuple else num_units + num_proj)
             self._output_size = num_proj
         else:
-            self._state_size = 2 * num_units
+            self._state_size = (
+                LSTMStateTuple(num_units, num_units)
+                if state_is_tuple else 2 * num_units)
             self._output_size = num_units
 
     @property
@@ -145,8 +159,11 @@ class BN_LSTMCell(RNNCell):
 
         num_proj = self.num_units if self.num_proj is None else self.num_proj
 
-        c_prev = tf.slice(state, [0, 0], [-1, self.num_units])
-        h_prev = tf.slice(state, [0, self.num_units], [-1, num_proj])
+        if self._state_is_tuple:
+            (c_prev, h_prev) = state
+        else:
+            c_prev = tf.slice(state, [0, 0], [-1, self.num_units])
+            h_prev = tf.slice(state, [0, self.num_units], [-1, num_proj])
 
         dtype = inputs.dtype
         input_size = inputs.get_shape().with_rank(2)[1]
@@ -174,7 +191,7 @@ class BN_LSTMCell(RNNCell):
 
             # i:input gate, j:new input, f:forget gate, o:output gate
             lstm_matrix = tf.nn.bias_add(tf.add(bn_xh, bn_hh), bias)
-            i, j, f, o = tf.split(1, 4, lstm_matrix)
+            i, j, f, o = tf.split(value=lstm_matrix, num_or_size_splits=4, axis=1)
 
             # Diagonal connections
             if self.use_peepholes:
@@ -211,4 +228,4 @@ class BN_LSTMCell(RNNCell):
                 if self.proj_clip is not None:
                     h = tf.clip_by_value(h, -self.proj_clip, self.proj_clip)
 
-            return h, tf.concat(1, [c, h])
+            return h, LSTMStateTuple(c, h)
