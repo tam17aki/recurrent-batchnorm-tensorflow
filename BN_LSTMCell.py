@@ -1,4 +1,4 @@
-# Copyright (C) 2016 by Akira TAMAMORI
+# Copyright (C) 2016-2017 by Akira TAMAMORI
 #
 # This program is free software; you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software
@@ -21,9 +21,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Notice:
-# This file is tested on TensorFlow v0.10.0 only.
-
 # Commentary:
 # TODO: implemation of another initializer for LSTM
 
@@ -32,12 +29,14 @@ import tensorflow as tf
 
 from tensorflow.contrib.rnn import RNNCell, LSTMStateTuple
 
+
 # Thanks to 'initializers_enhanced.py' of Project RNN Enhancement:
 # https://github.com/nicolas-ivanov/Seq2Seq_Upgrade_TensorFlow/blob/master/rnn_enhancement/initializers_enhanced.py
 def orthogonal_initializer(scale=1.0):
     def _initializer(shape, dtype=tf.float32, partition_info=None):
         if partition_info is not None:
-            ValueError("Do not know what to do with partition_info in BN_LSTMCell")
+            ValueError(
+                "Do not know what to do with partition_info in BN_LSTMCell")
         flat_shape = (shape[0], np.prod(shape[1:]))
         a = np.random.normal(0.0, 1.0, flat_shape)
         u, _, v = np.linalg.svd(a, full_matrices=False)
@@ -118,12 +117,14 @@ class BN_LSTMCell(RNNCell):
             the training.
           state_is_tuple: If True, accepted and returned states are 2-tuples of
             the `c_state` and `m_state`.  If False, they are concatenated
-            along the column axis.  This latter behavior will soon be deprecated.
+            along the column axis.
           activation: Activation function of the inner states.
         """
         if not state_is_tuple:
-            tf.logging.log_first_n(tf.logging.WARN, "%s: Using a concatenated state is slower and "
-                                   " will soon be deprecated.  Use state_is_tuple=True.", 1, self)
+            tf.logging.log_first_n(
+                tf.logging.WARN,
+                "%s: Using a concatenated state is slower and "
+                " will soon be deprecated.  Use state_is_tuple=True.", 1, self)
 
         self.num_units = num_units
         self.is_training = is_training
@@ -191,7 +192,8 @@ class BN_LSTMCell(RNNCell):
 
             # i:input gate, j:new input, f:forget gate, o:output gate
             lstm_matrix = tf.nn.bias_add(tf.add(bn_xh, bn_hh), bias)
-            i, j, f, o = tf.split(value=lstm_matrix, num_or_size_splits=4, axis=1)
+            i, j, f, o = tf.split(
+                value=lstm_matrix, num_or_size_splits=4, axis=1)
 
             # Diagonal connections
             if self.use_peepholes:
@@ -228,4 +230,7 @@ class BN_LSTMCell(RNNCell):
                 if self.proj_clip is not None:
                     h = tf.clip_by_value(h, -self.proj_clip, self.proj_clip)
 
-            return h, LSTMStateTuple(c, h)
+            new_state = (LSTMStateTuple(c, h)
+                         if self.state_is_tuple else tf.concat(1, [c, h]))
+
+            return h, new_state
